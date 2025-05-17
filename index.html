@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel Itinerary Planner</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"></script>
+    <style>
+        .draggable-list {
+            min-height: 100px;
+        }
+        .activity-card {
+            cursor: move;
+        }
+        .activity-card.dragging {
+            opacity: 0.5;
+        }
+        @media (max-width: 768px) {
+            .days-container {
+                flex-direction: column;
+            }
+            .day-column {
+                width: 100% !important;
+                margin-bottom: 1rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">Travel Itinerary Planner</h1>
+            <div class="flex justify-center gap-4 flex-wrap">
+                <button onclick="addDay()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    <i class="bi bi-plus-circle"></i> Add Day
+                </button>
+                <button onclick="saveItinerary()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                    <i class="bi bi-save"></i> Save Itinerary
+                </button>
+            </div>
+        </header>
+
+        <div class="days-container flex gap-4 overflow-x-auto pb-4">
+            <!-- Days will be dynamically added here -->
+        </div>
+    </div>
+
+    <!-- Add Activity Modal -->
+    <div id="activityModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h2 class="text-xl font-bold mb-4" id="modalTitle">Add Activity</h2>
+            <form id="activityForm" onsubmit="handleActivitySubmit(event)">
+                <input type="hidden" id="editDayIndex" value="">
+                <input type="hidden" id="editActivityIndex" value="">
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Title</label>
+                    <input type="text" id="activityTitle" class="w-full px-3 py-2 border rounded" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Time</label>
+                    <input type="time" id="activityTime" class="w-full px-3 py-2 border rounded">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Category</label>
+                    <select id="activityCategory" class="w-full px-3 py-2 border rounded">
+                        <option value="attraction">Attraction</option>
+                        <option value="food">Food</option>
+                        <option value="transport">Transport</option>
+                        <option value="accommodation">Accommodation</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let itinerary = JSON.parse(localStorage.getItem('itinerary')) || [];
+
+        function initializeItinerary() {
+            if (itinerary.length === 0) {
+                addDay();
+            }
+            renderItinerary();
+        }
+
+        function renderItinerary() {
+            const container = document.querySelector('.days-container');
+            container.innerHTML = '';
+
+            itinerary.forEach((day, dayIndex) => {
+                const dayColumn = createDayColumn(day, dayIndex);
+                container.appendChild(dayColumn);
+            });
+
+            // Initialize Sortable for all lists
+            document.querySelectorAll('.draggable-list').forEach(list => {
+                new Sortable(list, {
+                    group: 'shared',
+                    animation: 150,
+                    onEnd: function(evt) {
+                        const fromDayIndex = evt.from.dataset.dayIndex;
+                        const toDayIndex = evt.to.dataset.dayIndex;
+                        updateItineraryAfterDrag(fromDayIndex, toDayIndex);
+                    }
+                });
+            });
+        }
+
+        function createDayColumn(day, dayIndex) {
+            const column = document.createElement('div');
+            column.className = 'day-column w-80 flex-shrink-0 bg-white rounded-lg shadow p-4';
+            column.innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Day ${dayIndex + 1}</h2>
+                    <div class="flex gap-2">
+                        <button onclick="openAddActivityModal(${dayIndex})" class="text-blue-500 hover:text-blue-600">
+                            <i class="bi bi-plus-circle"></i>
+                        </button>
+                        <button onclick="removeDay(${dayIndex})" class="text-red-500 hover:text-red-600">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="draggable-list" data-day-index="${dayIndex}">
+                    ${day.activities.map((activity, activityIndex) => createActivityCard(activity, dayIndex, activityIndex)).join('')}
+                </div>
+            `;
+            return column;
+        }
+
+        function createActivityCard(activity, dayIndex, activityIndex) {
+            const categoryIcons = {
+                attraction: 'bi-camera',
+                food: 'bi-cup-hot',
+                transport: 'bi-car-front',
+                accommodation: 'bi-house'
+            };
+
+            return `
+                <div class="activity-card bg-gray-50 p-3 mb-2 rounded shadow-sm" data-activity-index="${activityIndex}">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-semibold">${activity.title}</div>
+                            ${activity.time ? `<div class="text-sm text-gray-600">${activity.time}</div>` : ''}
+                        </div>
+                        <div class="flex gap-2">
+                            <i class="bi ${categoryIcons[activity.category]} text-gray-600"></i>
+                            <button onclick="editActivity(${dayIndex}, ${activityIndex})" class="text-blue-500 hover:text-blue-600">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button onclick="removeActivity(${dayIndex}, ${activityIndex})" class="text-red-500 hover:text-red-600">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function addDay() {
+            itinerary.push({ activities: [] });
+            renderItinerary();
+            saveItinerary();
+        }
+
+        function removeDay(dayIndex) {
+            if (confirm('Are you sure you want to remove this day?')) {
+                itinerary.splice(dayIndex, 1);
+                if (itinerary.length === 0) addDay();
+                renderItinerary();
+                saveItinerary();
+            }
+        }
+
+        function openAddActivityModal(dayIndex) {
+            document.getElementById('modalTitle').textContent = 'Add Activity';
+            document.getElementById('editDayIndex').value = dayIndex;
+            document.getElementById('editActivityIndex').value = '';
+            document.getElementById('activityForm').reset();
+            document.getElementById('activityModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('activityModal').classList.add('hidden');
+        }
+
+        function handleActivitySubmit(event) {
+            event.preventDefault();
+            const dayIndex = parseInt(document.getElementById('editDayIndex').value);
+            const activityIndex = document.getElementById('editActivityIndex').value;
+            const activity = {
+                title: document.getElementById('activityTitle').value,
+                time: document.getElementById('activityTime').value,
+                category: document.getElementById('activityCategory').value
+            };
+
+            if (activityIndex === '') {
+                itinerary[dayIndex].activities.push(activity);
+            } else {
+                itinerary[dayIndex].activities[activityIndex] = activity;
+            }
+
+            renderItinerary();
+            saveItinerary();
+            closeModal();
+        }
+
+        function editActivity(dayIndex, activityIndex) {
+            const activity = itinerary[dayIndex].activities[activityIndex];
+            document.getElementById('modalTitle').textContent = 'Edit Activity';
+            document.getElementById('editDayIndex').value = dayIndex;
+            document.getElementById('editActivityIndex').value = activityIndex;
+            document.getElementById('activityTitle').value = activity.title;
+            document.getElementById('activityTime').value = activity.time;
+            document.getElementById('activityCategory').value = activity.category;
+            document.getElementById('activityModal').classList.remove('hidden');
+        }
+
+        function removeActivity(dayIndex, activityIndex) {
+            if (confirm('Are you sure you want to remove this activity?')) {
+                itinerary[dayIndex].activities.splice(activityIndex, 1);
+                renderItinerary();
+                saveItinerary();
+            }
+        }
+
+        function updateItineraryAfterDrag(fromDayIndex, toDayIndex) {
+            const newItinerary = itinerary.map((day, index) => {
+                const activities = Array.from(document.querySelectorAll(`[data-day-index="${index}"] .activity-card`))
+                    .map(card => {
+                        const activityIndex = parseInt(card.dataset.activityIndex);
+                        const sourceDay = parseInt(card.parentElement.dataset.dayIndex);
+                        return itinerary[sourceDay].activities[activityIndex];
+                    });
+                return { activities };
+            });
+            itinerary = newItinerary;
+            saveItinerary();
+        }
+
+        function saveItinerary() {
+            localStorage.setItem('itinerary', JSON.stringify(itinerary));
+        }
+
+        // Initialize the app
+        initializeItinerary();
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
